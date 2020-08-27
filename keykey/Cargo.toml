@@ -1,0 +1,23 @@
+[package]
+name = "keykey"
+version = "0.1.0"
+authors = ["Thales Fragoso <thales.fragosoz@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+stm32f1xx-hal = {version = "0.6.1", features = ["stm32f103", "rt", "stm32-usbd"] }
+cortex-m-rtic = "0.5.3"
+cortex-m = "0.6.3"
+rtt-target = { version = "0.2.2", features = ["cortex-m"] }
+debouncer = {path = "../../debouncer", version = "0.1.0"}
+keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "1d5ddd0" }
+usb-device = "0.2.5"
+typenum = "1.10.0"
+embedded-hal = "0.2.3"
+
+[[bin]]
+name = "keykey"
+test = false
+bench = false

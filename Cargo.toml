@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "keykey",
+]
+
+[profile.release]
+opt-level = "s"
+debug = true
+lto = true
+codegen-units = 1
+
+# do not optimize proc-macro deps or build scripts
+[profile.dev.build-override]
+codegen-units = 16
+debug = false
+opt-level = 0
+
+[profile.release.build-override]
+codegen-units = 16
+debug = false
+opt-level = 0
