@@ -6,13 +6,9 @@ use core::{
     sync::atomic::{compiler_fence, Ordering},
 };
 use cortex_m::asm;
-use debouncer::{BtnState, PortDebouncer};
+use debouncer::PortDebouncer;
 use embedded_hal::digital::v2::OutputPin;
-use keyberon::{
-    hid::HidClass,
-    key_code::{KbHidReport, KeyCode},
-    keyboard::Keyboard,
-};
+use heapless::spsc::{Consumer, Queue};
 use rtic::app;
 use rtt_target::{rprintln, rtt_init_print};
 use stm32f1xx_hal::{
@@ -24,8 +20,13 @@ use stm32f1xx_hal::{
 use typenum::consts::*;
 use usb_device::{bus, class::UsbClass, prelude::*};
 
+mod keyboard;
+mod packets;
+use keyboard::{Keykey, Matrix};
+use packets::AppCommand;
+
 type UsbType = UsbDevice<'static, UsbBus<UsbPeripheral>>;
-type KeyboardType = HidClass<'static, UsbBus<UsbPeripheral>, Keyboard<()>>;
+type KeyboardType = Keykey<'static, 'static, UsbBus<UsbPeripheral>>;
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
 const APP: () = {
@@ -34,11 +35,15 @@ const APP: () = {
         debouncer_handler: PortDebouncer<U8, U3>,
         usb_dev: UsbType,
         keyboard: KeyboardType,
+        app_consumer: Consumer<'static, AppCommand, U8>,
+        #[init(Matrix::new())]
+        matrix: Matrix,
     }
 
     #[init]
     fn init(cx: init::Context) -> init::LateResources {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
+        static mut Q: Queue<AppCommand, U8> = Queue(heapless::i::Queue::new());
 
         let mut flash = cx.device.FLASH.constrain();
         let mut rcc = cx.device.RCC.constrain();
@@ -77,8 +82,9 @@ const APP: () = {
         };
 
         *USB_BUS = Some(UsbBus::new(usb));
+        let (prod, cons) = Q.split();
 
-        let keyboard = keyberon::new_class(USB_BUS.as_ref().unwrap(), ());
+        let keyboard = Keykey::new(USB_BUS.as_ref().unwrap(), prod);
 
         let usb_dev = UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27dd))
             .manufacturer("Fake company")
@@ -97,6 +103,7 @@ const APP: () = {
             debouncer_handler: PortDebouncer::new(32, 208),
             usb_dev,
             keyboard,
+            app_consumer: cons,
         }
     }
 
@@ -107,7 +114,7 @@ const APP: () = {
         }
     }
 
-    #[task(binds = TIM2, priority = 2, resources = [debouncer_timer, debouncer_handler, keyboard])]
+    #[task(binds = TIM2, priority = 2, resources = [debouncer_timer, debouncer_handler, keyboard, matrix, app_consumer])]
     fn debouncer_task(mut cx: debouncer_task::Context) {
         cx.resources.debouncer_timer.clear_update_interrupt_flag();
         if cx
@@ -115,34 +122,18 @@ const APP: () = {
             .debouncer_handler
             .update(!(unsafe { (*pac::GPIOA::ptr()).idr.read().bits() }))
         {
-            let mut report = KbHidReport::default();
-
-            let state = cx.resources.debouncer_handler.get_state(0);
-            if let Ok(rot) = state {
-                if rot == BtnState::ChangedToPressed {
-                    report.pressed(KeyCode::A);
-                }
-            }
-
-            let state = cx.resources.debouncer_handler.get_state(1);
-            if let Ok(right) = state {
-                if right == BtnState::ChangedToPressed {
-                    report.pressed(KeyCode::B);
-                }
-            }
-
-            let state = cx.resources.debouncer_handler.get_state(2);
-            if let Ok(left) = state {
-                if left == BtnState::ChangedToPressed {
-                    report.pressed(KeyCode::C);
-                }
-            }
+            let report = cx.resources.matrix.update(cx.resources.debouncer_handler);
 
             cx.resources.keyboard.lock(|shared| {
-                if shared.device_mut().set_keyboard_report(report.clone()) {
+                if shared.set_keyboard_report(report.clone()) {
                     while let Ok(0) = shared.write(report.as_bytes()) {}
                 }
             });
+
+            // Update the layout if needed
+            if let Some(cmd) = cx.resources.app_consumer.dequeue() {
+                cx.resources.matrix.update_layout(cmd);
+            }
         }
     }
 

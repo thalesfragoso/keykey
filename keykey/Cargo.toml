@@ -16,6 +16,8 @@ keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "1d5ddd0" }
 usb-device = "0.2.5"
 typenum = "1.10.0"
 embedded-hal = "0.2.3"
+num_enum = { version = "0.5.1", default-features = false }
+heapless = "0.5.5"
 
 [[bin]]
 name = "keykey"
