@@ -129,11 +129,10 @@ const APP: () = {
                     while let Ok(0) = shared.write(report.as_bytes()) {}
                 }
             });
-
-            // Update the layout if needed
-            if let Some(cmd) = cx.resources.app_consumer.dequeue() {
-                cx.resources.matrix.update_layout(cmd);
-            }
+        }
+        // Update the layout if needed
+        if let Some(cmd) = cx.resources.app_consumer.dequeue() {
+            cx.resources.matrix.update_layout(cmd);
         }
     }
 

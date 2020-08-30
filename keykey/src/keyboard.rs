@@ -191,9 +191,13 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
                     VendorCommand::try_from(req.request),
                     value_to_key_code(req.value),
                 ) {
-                    self.cmd_prod
+                    if self
+                        .cmd_prod
                         .enqueue(AppCommand::from_req_value(cmd, key))
-                        .ok();
+                        .is_ok()
+                    {
+                        xfer.accept().ok();
+                    }
                 }
             }
             _ => {}
