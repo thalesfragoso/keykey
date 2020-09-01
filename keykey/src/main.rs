@@ -9,6 +9,7 @@ use cortex_m::asm;
 use debouncer::PortDebouncer;
 use embedded_hal::digital::v2::OutputPin;
 use heapless::spsc::{Consumer, Queue};
+use keylib::packets::AppCommand;
 use rtic::app;
 use rtt_target::{rprintln, rtt_init_print};
 use stm32f1xx_hal::{
@@ -21,9 +22,7 @@ use typenum::consts::*;
 use usb_device::{bus, class::UsbClass, prelude::*};
 
 mod keyboard;
-mod packets;
 use keyboard::{Keykey, Matrix};
-use packets::AppCommand;
 
 type UsbType = UsbDevice<'static, UsbBus<UsbPeripheral>>;
 type KeyboardType = Keykey<'static, 'static, UsbBus<UsbPeripheral>>;

@@ -1,0 +1,17 @@
+[package]
+name = "keykey-host"
+version = "0.1.0"
+authors = ["Thales Fragoso <thales.fragosoz@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+num_enum = { version = "0.5.1", default-features = false }
+
+
+[lib]
+name = "keylib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "keykey-config"
+path = "src/main.rs"

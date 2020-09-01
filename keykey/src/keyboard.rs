@@ -1,8 +1,10 @@
-use crate::packets::{AppCommand, DescriptorType, ReportType, Request, VendorCommand};
 use core::convert::TryFrom;
 use debouncer::{BtnState, PortDebouncer};
 use heapless::spsc::Producer;
-use keyberon::key_code::{KbHidReport, KeyCode};
+use keylib::{
+    key_code::{KbHidReport, KeyCode},
+    packets::{AppCommand, DescriptorType, ReportType, Request, VendorCommand},
+};
 use typenum::consts::*;
 use usb_device::{
     bus::{InterfaceNumber, StringIndex, UsbBus, UsbBusAllocator},
@@ -187,9 +189,9 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
         #[allow(clippy::single_match)]
         match (req.request_type, req.recipient) {
             (RequestType::Vendor, Recipient::Device) => {
-                if let (Ok(cmd), Some(key)) = (
+                if let (Ok(cmd), Ok(key)) = (
                     VendorCommand::try_from(req.request),
-                    value_to_key_code(req.value),
+                    KeyCode::try_from(req.value as u8),
                 ) {
                     if self
                         .cmd_prod
@@ -202,14 +204,6 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
             }
             _ => {}
         }
-    }
-}
-
-// TODO: Change this
-fn value_to_key_code(value: u16) -> Option<KeyCode> {
-    match value {
-        0 => Some(KeyCode::Z),
-        _ => None,
     }
 }
 

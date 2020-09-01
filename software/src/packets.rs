@@ -1,4 +1,4 @@
-use keyberon::key_code::KeyCode;
+use crate::key_code::KeyCode;
 use num_enum::TryFromPrimitive;
 
 #[derive(Debug, Clone, Copy)]

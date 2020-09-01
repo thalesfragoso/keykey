@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "keykey",
+    "software",
 ]
 
 [profile.release]
