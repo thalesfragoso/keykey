@@ -1,9 +1,13 @@
 /// From TeXitoi work on keyberon.
 use num_enum::TryFromPrimitive;
+#[cfg(feature = "host")]
+use strum_macros::{AsRefStr, EnumIter};
 
 /// Define a key code according to the HID specification. Their names
 /// correspond to the american QWERTY layout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, TryFromPrimitive)]
+#[cfg_attr(feature = "host", derive(AsRefStr, EnumIter))]
+#[cfg_attr(feature = "host", strum(serialize_all = "lowercase"))]
 #[repr(u8)]
 pub enum KeyCode {
     /// The "no" key, a placeholder to express nothing.
