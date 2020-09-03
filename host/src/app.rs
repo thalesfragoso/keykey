@@ -1,13 +1,31 @@
-use super::GREETING;
 use crossterm::{
-    cursor, queue,
+    cursor, execute, queue,
     style::{self, Colorize},
-    terminal::{self, ClearType},
+    terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
     Result as TermResult,
 };
 use keylib::key_code::KeyCode;
-use std::{convert::AsRef, fmt, io::Write};
+use std::{
+    convert::AsRef,
+    fmt,
+    io::{self, stdout, Stdout, Write},
+};
 use strum::IntoEnumIterator;
+
+const KEY_INPUT_LABEL: &'static str = "Key: ";
+const SELECT_MENU: &str = r#"Keykey configuration tool
+
+Controls:
+ - 'ctrl + q' - quit
+ - 'esc' - return to this menu
+ - 'enter' - select key
+
+Options:
+1. Config button 1
+2. Config button 2
+3. Config button 3
+s. Save current configuration to device flash
+"#;
 
 pub struct App {
     current_line: usize,
@@ -62,6 +80,11 @@ impl App {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.user_input.clear();
+        self.search_all();
+    }
+
     pub fn render(&self, w: &mut impl Write) -> TermResult<()> {
         queue!(
             w,
@@ -82,7 +105,7 @@ impl App {
         queue!(
             w,
             cursor::MoveTo(0, 0),
-            style::Print(GREETING),
+            style::Print(KEY_INPUT_LABEL),
             style::Print(&self.user_input),
         )?;
         w.flush()?;
@@ -98,6 +121,68 @@ impl App {
         if self.current_line + 1 > self.hits.len() {
             self.current_line = self.hits.len().saturating_sub(1);
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum State {
+    SelectScreen,
+    Set1,
+    Set2,
+    Set3,
+}
+
+pub struct Term {
+    w: Stdout,
+    pub state: State,
+}
+
+impl Term {
+    pub fn new() -> TermResult<Self> {
+        let mut term = Self {
+            w: stdout(),
+            state: State::SelectScreen,
+        };
+        execute!(&mut term, terminal::EnterAlternateScreen)?;
+        enable_raw_mode()?;
+        Ok(term)
+    }
+    pub fn render_menu_screen(&mut self) -> TermResult<()> {
+        queue!(
+            self,
+            style::ResetColor,
+            terminal::Clear(ClearType::All),
+            cursor::Hide,
+            cursor::MoveTo(0, 0)
+        )?;
+
+        for line in SELECT_MENU.split('\n') {
+            queue!(self, style::Print(line), cursor::MoveToNextLine(1))?;
+        }
+        self.flush()?;
+        Ok(())
+    }
+}
+
+impl Write for Term {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.w.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.w.flush()
+    }
+}
+
+impl Drop for Term {
+    fn drop(&mut self) {
+        execute!(
+            self,
+            style::ResetColor,
+            cursor::Show,
+            terminal::LeaveAlternateScreen
+        )
+        .ok();
+        disable_raw_mode().ok();
     }
 }
 

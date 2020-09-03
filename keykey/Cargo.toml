@@ -13,7 +13,7 @@ cortex-m = "0.6.3"
 rtt-target = { version = "0.2.2", features = ["cortex-m"] }
 debouncer = {path = "../../debouncer", version = "0.1.0"}
 #keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "1d5ddd0" }
-keykey-host = { path = "../software" }
+keykey-host = { path = "../host" }
 usb-device = "0.2.5"
 typenum = "1.10.0"
 embedded-hal = "0.2.3"
