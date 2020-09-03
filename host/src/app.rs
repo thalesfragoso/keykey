@@ -1,17 +1,25 @@
+use anyhow::{anyhow, Context, Result};
 use crossterm::{
     cursor, execute, queue,
     style::{self, Colorize},
     terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
-    Result as TermResult,
 };
 use keylib::key_code::KeyCode;
+use keylib::packets::VendorCommand;
+use rusb::{
+    request_type, Context as RusbContext, DeviceHandle, Direction, Recipient, RequestType,
+    UsbContext,
+};
 use std::{
     convert::AsRef,
     fmt,
     io::{self, stdout, Stdout, Write},
+    time::Duration,
 };
 use strum::IntoEnumIterator;
 
+const VID: u16 = 0x16C0;
+const PID: u16 = 0x27DD;
 const KEY_INPUT_LABEL: &'static str = "Key: ";
 const SELECT_MENU: &str = r#"Keykey configuration tool
 
@@ -24,24 +32,34 @@ Options:
 1. Config button 1
 2. Config button 2
 3. Config button 3
-s. Save current configuration to device flash
+s. Save current configuration to device flash - unimplemented
 "#;
 
 pub struct App {
     current_line: usize,
     user_input: String,
     hits: Vec<KeyCode>,
+    usb_handle: DeviceHandle<RusbContext>,
+    request_type: u8,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
+        let context = RusbContext::new().with_context(|| "Failed to create libusb context")?;
+        let usb_handle = context
+            .open_device_with_vid_pid(VID, PID)
+            .ok_or_else(|| anyhow!("Unable to open device, VID: {:#X}, PID: {:#X}", VID, PID))?;
+
+        let request_type = request_type(Direction::Out, RequestType::Vendor, Recipient::Device);
         let mut app = Self {
             current_line: 0,
             user_input: String::with_capacity(16),
             hits: Vec::with_capacity(16),
+            usb_handle,
+            request_type,
         };
         app.search_all();
-        app
+        Ok(app)
     }
 
     pub fn push_char_hit(&mut self, mut new: char) {
@@ -85,7 +103,7 @@ impl App {
         self.search_all();
     }
 
-    pub fn render(&self, w: &mut impl Write) -> TermResult<()> {
+    pub fn render(&self, w: &mut impl Write) -> Result<()> {
         queue!(
             w,
             style::ResetColor,
@@ -112,6 +130,26 @@ impl App {
         Ok(())
     }
 
+    pub fn send_selected(&mut self, command: VendorCommand) -> Result<()> {
+        let key = self
+            .hits
+            .get(self.current_line)
+            .ok_or_else(|| anyhow!("Internal Error: Could not find selected key"))?;
+
+        let timeout = Duration::from_secs(1);
+        self.usb_handle
+            .write_control(
+                self.request_type,
+                command as u8,
+                *key as u8 as u16,
+                0,
+                &[],
+                timeout,
+            )
+            .map(|_| ())
+            .with_context(|| "Failed to send control transfer.")
+    }
+
     fn search_all(&mut self) {
         self.hits.clear();
         let input = self.user_input.as_str();
@@ -124,12 +162,23 @@ impl App {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum State {
     SelectScreen,
     Set1,
     Set2,
     Set3,
+}
+
+impl State {
+    pub fn to_vendor_command(self) -> Result<VendorCommand> {
+        match self {
+            State::Set1 => Ok(VendorCommand::Set1),
+            State::Set2 => Ok(VendorCommand::Set2),
+            State::Set3 => Ok(VendorCommand::Set3),
+            _ => Err(anyhow!("Internal Error: Invalid Vendor command.")),
+        }
+    }
 }
 
 pub struct Term {
@@ -138,7 +187,7 @@ pub struct Term {
 }
 
 impl Term {
-    pub fn new() -> TermResult<Self> {
+    pub fn new() -> Result<Self> {
         let mut term = Self {
             w: stdout(),
             state: State::SelectScreen,
@@ -147,7 +196,7 @@ impl Term {
         enable_raw_mode()?;
         Ok(term)
     }
-    pub fn render_menu_screen(&mut self) -> TermResult<()> {
+    pub fn render_menu_screen(&mut self) -> Result<()> {
         queue!(
             self,
             style::ResetColor,

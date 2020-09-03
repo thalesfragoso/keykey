@@ -6,9 +6,11 @@ edition = "2018"
 
 [dependencies]
 num_enum = { version = "0.5.1", default-features = false }
-crossterm = "0.17.7"
+crossterm = { version = "0.17.7", optional = true }
 strum_macros = {version = "0.19.2", optional = true }
-strum = "0.19.2"
+strum = { version = "0.19.2", optional = true }
+rusb = { version = "0.6.3", optional = true }
+anyhow = {version = "1.0.32", optional = true }
 
 [lib]
 name = "keylib"
@@ -19,4 +21,4 @@ name = "keyconfig"
 path = "src/main.rs"
 
 [features]
-host = ["strum_macros"]
+host = ["crossterm", "strum_macros", "strum", "rusb", "anyhow"]

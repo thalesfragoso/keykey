@@ -1,14 +1,12 @@
-use crossterm::{
-    event::{read, Event, KeyCode as TermKey, KeyEvent, KeyModifiers},
-    Result as TermResult,
-};
+use anyhow::Result;
+use crossterm::event::{read, Event, KeyCode as TermKey, KeyEvent, KeyModifiers};
 
 mod app;
 use app::{App, State, Term};
 
-fn main() -> TermResult<()> {
+fn main() -> Result<()> {
     let mut term = Term::new()?;
-    let mut app = App::new();
+    let mut app = App::new()?;
 
     'outer: loop {
         if term.state == State::SelectScreen {
@@ -48,8 +46,8 @@ fn main() -> TermResult<()> {
                         code: TermKey::Enter,
                         ..
                     }) => {
+                        app.send_selected(term.state.to_vendor_command()?)?;
                         term.state = State::SelectScreen;
-                        // TODO: Send selected key to usb device
                         app.clear();
                         break 'inner;
                     }
