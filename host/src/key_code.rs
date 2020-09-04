@@ -3,6 +3,13 @@ use num_enum::TryFromPrimitive;
 #[cfg(feature = "host")]
 use strum_macros::{AsRefStr, EnumIter};
 
+pub mod valid_ranges {
+    pub const ZONE1_FIRST: u8 = 0x00;
+    pub const ZONE1_LAST: u8 = 0xA4;
+    pub const ZONE2_FIRST: u8 = 0xE0;
+    pub const ZONE2_LAST: u8 = 0xFB;
+}
+
 /// Define a key code according to the HID specification. Their names
 /// correspond to the american QWERTY layout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, TryFromPrimitive)]

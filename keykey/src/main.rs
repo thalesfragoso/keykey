@@ -6,10 +6,13 @@ use core::{
     sync::atomic::{compiler_fence, Ordering},
 };
 use cortex_m::asm;
-use debouncer::PortDebouncer;
+use debouncer::{
+    typenum::{consts::*, Unsigned},
+    PortDebouncer,
+};
 use embedded_hal::digital::v2::OutputPin;
 use heapless::spsc::{Consumer, Queue};
-use keylib::packets::AppCommand;
+use keylib::{packets::AppCommand, PID, VID};
 use rtic::app;
 use rtt_target::{rprintln, rtt_init_print};
 use stm32f1xx_hal::{
@@ -18,20 +21,22 @@ use stm32f1xx_hal::{
     timer::{CountDownTimer, Event, Timer},
     usb::{Peripheral as UsbPeripheral, UsbBus, UsbBusType},
 };
-use typenum::consts::*;
 use usb_device::{bus, class::UsbClass, prelude::*};
 
+mod flash;
 mod keyboard;
 use keyboard::{Keykey, Matrix};
 
 type UsbType = UsbDevice<'static, UsbBus<UsbPeripheral>>;
 type KeyboardType = Keykey<'static, 'static, UsbBus<UsbPeripheral>>;
+pub type BtnsType = U3;
+pub const NUM_BTS: usize = BtnsType::USIZE;
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
 const APP: () = {
     struct Resources {
         debouncer_timer: CountDownTimer<pac::TIM2>,
-        debouncer_handler: PortDebouncer<U8, U3>,
+        debouncer_handler: PortDebouncer<U8, BtnsType>,
         usb_dev: UsbType,
         keyboard: KeyboardType,
         app_consumer: Consumer<'static, AppCommand, U8>,
@@ -85,7 +90,7 @@ const APP: () = {
 
         let keyboard = Keykey::new(USB_BUS.as_ref().unwrap(), prod);
 
-        let usb_dev = UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(0x16c0, 0x27dd))
+        let usb_dev = UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(VID, PID))
             .manufacturer("Fake company")
             .product("KeyKey")
             .serial_number("TEST")

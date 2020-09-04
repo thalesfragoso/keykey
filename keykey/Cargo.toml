@@ -11,14 +11,13 @@ stm32f1xx-hal = {version = "0.6.1", features = ["stm32f103", "rt", "stm32-usbd"]
 cortex-m-rtic = "0.5.3"
 cortex-m = "0.6.3"
 rtt-target = { version = "0.2.2", features = ["cortex-m"] }
-debouncer = {path = "../../debouncer", version = "0.1.0"}
-#keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "1d5ddd0" }
+debouncer = {git = "https://github.com/thalesfragoso/debouncer", rev = "33f5651"}
 keykey-host = { path = "../host" }
 usb-device = "0.2.5"
-typenum = "1.10.0"
 embedded-hal = "0.2.3"
-num_enum = { version = "0.5.1", default-features = false }
 heapless = "0.5.5"
+static_assertions = "1.1.0"
+#keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "1d5ddd0" }
 
 [[bin]]
 name = "keykey"

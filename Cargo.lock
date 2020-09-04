@@ -197,9 +197,9 @@ dependencies = [
 [[package]]
 name = "debouncer"
 version = "0.1.0"
+source = "git+https://github.com/thalesfragoso/debouncer?rev=33f5651#33f5651cb6b9a61b3e9690f666dae1dc73ad6266"
 dependencies = [
- "generic-array 0.13.2",
- "typenum",
+ "generic-array 0.14.4",
 ]
 
 [[package]]
@@ -251,6 +251,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ed1e761351b56f54eb9dcd0cfaca9fd0daecf93918e1cfc01c8a3d26ee7adcd"
 dependencies = [
  "typenum",
+]
+
+[[package]]
+name = "generic-array"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "501466ecc8a30d1d3b7fc9229b122b2ce8ed6e9d9223f1138d4babb253e51817"
+dependencies = [
+ "typenum",
+ "version_check",
 ]
 
 [[package]]
@@ -312,10 +322,9 @@ dependencies = [
  "embedded-hal",
  "heapless",
  "keykey-host",
- "num_enum",
  "rtt-target",
+ "static_assertions",
  "stm32f1xx-hal",
- "typenum",
  "usb-device",
 ]
 
@@ -633,6 +642,12 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stm32-usbd"

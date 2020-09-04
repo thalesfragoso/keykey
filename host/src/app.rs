@@ -4,8 +4,8 @@ use crossterm::{
     style::{self, Colorize},
     terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
 };
-use keylib::key_code::KeyCode;
 use keylib::packets::VendorCommand;
+use keylib::{key_code::KeyCode, PID, VID};
 use rusb::{
     request_type, Context as RusbContext, DeviceHandle, Direction, Recipient, RequestType,
     UsbContext,
@@ -18,8 +18,6 @@ use std::{
 };
 use strum::IntoEnumIterator;
 
-const VID: u16 = 0x16C0;
-const PID: u16 = 0x27DD;
 const KEY_INPUT_LABEL: &'static str = "Key: ";
 const SELECT_MENU: &str = r#"Keykey configuration tool
 

@@ -1,11 +1,15 @@
+use super::{BtnsType, NUM_BTS};
 use core::convert::TryFrom;
+use debouncer::typenum::consts::*;
 use debouncer::{BtnState, PortDebouncer};
 use heapless::spsc::Producer;
 use keylib::{
-    key_code::{KbHidReport, KeyCode},
+    key_code::{
+        valid_ranges::{ZONE1_FIRST, ZONE1_LAST, ZONE2_FIRST, ZONE2_LAST},
+        KbHidReport, KeyCode,
+    },
     packets::{AppCommand, DescriptorType, ReportType, Request, VendorCommand},
 };
-use typenum::consts::*;
 use usb_device::{
     bus::{InterfaceNumber, StringIndex, UsbBus, UsbBusAllocator},
     class::{ControlIn, ControlOut, UsbClass},
@@ -207,8 +211,9 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Matrix {
-    layout: [KeyCode; 3],
+    layout: [KeyCode; NUM_BTS],
 }
 
 impl Matrix {
@@ -226,29 +231,42 @@ impl Matrix {
         }
     }
 
-    pub fn update(&self, debouncer: &mut PortDebouncer<U8, U3>) -> KbHidReport {
+    pub fn update(&self, debouncer: &mut PortDebouncer<U8, BtnsType>) -> KbHidReport {
         let mut report = KbHidReport::default();
 
-        let state = debouncer.get_state(0);
-        if let Ok(rot) = state {
-            if rot == BtnState::ChangedToPressed {
-                report.pressed(self.layout[0]);
-            }
-        }
-
-        let state = debouncer.get_state(1);
-        if let Ok(right) = state {
-            if right == BtnState::ChangedToPressed {
-                report.pressed(self.layout[1]);
-            }
-        }
-
-        let state = debouncer.get_state(2);
-        if let Ok(left) = state {
-            if left == BtnState::ChangedToPressed {
-                report.pressed(self.layout[2]);
+        for (index, &btn) in self.layout.iter().enumerate() {
+            let state = debouncer.get_state(index);
+            if let Ok(value) = state {
+                if value == BtnState::ChangedToPressed || value == BtnState::Repeat {
+                    report.pressed(btn);
+                }
             }
         }
         report
+    }
+
+    pub fn to_bytes(self) -> [u8; NUM_BTS] {
+        // NOTE(unsafe) `self.layout` is `[KeyCode; NUM_BTS]` and `KeyCode` is `repr(u8)`
+        unsafe { core::mem::transmute(self.layout) }
+    }
+
+    pub fn from_bytes(bytes: [u8; NUM_BTS]) -> Option<Self> {
+        // Look for invalid codes
+        #[allow(clippy::absurd_extreme_comparisons)]
+        let invalid_code = bytes.iter().any(|&code| {
+            // The first test will probably get optimized out when `ZONE1_FIRST` == 0, but we do it
+            // anyway because that can change
+            (code < ZONE1_FIRST) || (code > ZONE1_LAST && code < ZONE2_FIRST) || (code > ZONE2_LAST)
+        });
+        if invalid_code {
+            None
+        } else {
+            // NOTE(unsafe) safe based on the check above
+            unsafe {
+                Some(Self {
+                    layout: core::mem::transmute(bytes),
+                })
+            }
+        }
     }
 }
