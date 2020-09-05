@@ -14,7 +14,6 @@ use embedded_hal::digital::v2::OutputPin;
 use heapless::spsc::{Consumer, Queue};
 use keylib::{packets::AppCommand, PID, VID};
 use rtic::app;
-use rtt_target::{rprintln, rtt_init_print};
 use stm32f1xx_hal::{
     pac,
     prelude::*,
@@ -23,8 +22,11 @@ use stm32f1xx_hal::{
 };
 use usb_device::{bus, class::UsbClass, prelude::*};
 
+#[macro_use]
+mod loggy;
 mod flash;
 mod keyboard;
+use flash::{ConfigWriter, FlashError};
 use keyboard::{Keykey, Matrix};
 
 type UsbType = UsbDevice<'static, UsbBus<UsbPeripheral>>;
@@ -40,8 +42,8 @@ const APP: () = {
         usb_dev: UsbType,
         keyboard: KeyboardType,
         app_consumer: Consumer<'static, AppCommand, U8>,
-        #[init(Matrix::new())]
         matrix: Matrix,
+        writer: ConfigWriter,
     }
 
     #[init]
@@ -60,13 +62,17 @@ const APP: () = {
             .pclk1(36.mhz())
             .freeze(&mut flash.acr);
 
-        rtt_init_print!();
+        init_log!();
         assert!(clocks.usbclk_valid());
 
         // buttons, in order: shoot, left, right
         let _ = gpioa.pa0.into_pull_up_input(&mut gpioa.crl);
         let _ = gpioa.pa1.into_pull_up_input(&mut gpioa.crl);
         let _ = gpioa.pa2.into_pull_up_input(&mut gpioa.crl);
+
+        // Flash writer
+        let writer = ConfigWriter::new(flash).unwrap();
+        let matrix = writer.get_config().unwrap_or_else(Matrix::new);
 
         // BluePill board has a pull-up resistor on the D+ line.
         // Pull the D+ pin down to send a RESET condition to the USB bus.
@@ -100,7 +106,7 @@ const APP: () = {
             Timer::tim2(cx.device.TIM2, &clocks, &mut rcc.apb1).start_count_down(200.hz());
         timer2.listen(Event::Update);
 
-        rprintln!("Init finished");
+        log!("Init finished");
 
         init::LateResources {
             debouncer_timer: timer2,
@@ -108,6 +114,8 @@ const APP: () = {
             usb_dev,
             keyboard,
             app_consumer: cons,
+            writer,
+            matrix,
         }
     }
 
@@ -118,7 +126,7 @@ const APP: () = {
         }
     }
 
-    #[task(binds = TIM2, priority = 2, resources = [debouncer_timer, debouncer_handler, keyboard, matrix, app_consumer])]
+    #[task(binds = TIM2, priority = 2, resources = [debouncer_timer, debouncer_handler, keyboard, matrix, app_consumer, writer])]
     fn debouncer_task(mut cx: debouncer_task::Context) {
         cx.resources.debouncer_timer.clear_update_interrupt_flag();
         if cx
@@ -130,13 +138,21 @@ const APP: () = {
 
             cx.resources.keyboard.lock(|shared| {
                 if shared.set_keyboard_report(report.clone()) {
-                    while let Ok(0) = shared.write(report.as_bytes()) {}
+                    if shared.write(report.as_bytes()).is_err() {
+                        log!("Error while sending report");
+                    }
                 }
             });
         }
         // Update the layout if needed
         if let Some(cmd) = cx.resources.app_consumer.dequeue() {
-            cx.resources.matrix.update_layout(cmd);
+            let writer = cx.resources.writer;
+            if let Err(FlashError::FlashNotErased) = cx.resources.matrix.update_layout(cmd, writer)
+            {
+                // Something went wrong, erase the flash and try one more time
+                writer.write_default().unwrap();
+                cx.resources.matrix.update_layout(cmd, writer).unwrap();
+            }
         }
     }
 
@@ -152,7 +168,7 @@ const APP: () = {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     cortex_m::interrupt::disable();
-    rprintln!("{}", info);
+    log!("{}", info);
     loop {
         compiler_fence(Ordering::SeqCst);
     }

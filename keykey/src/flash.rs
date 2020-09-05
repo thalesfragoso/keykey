@@ -54,7 +54,7 @@ pub enum FlashError {
     FlashNotErased,
 }
 
-struct ConfigWriter {
+pub struct ConfigWriter {
     // Guarantee for the ownership of the registers, zero sized
     _parts: Parts,
     last_valid_index: usize,
@@ -69,6 +69,7 @@ impl ConfigWriter {
 
         // Do we need to erase the whole thing ?
         if unsafe { ptr::read_volatile(CONFIG_ADD as *const u8) } != MAGIC {
+            log!("No saved config found, creating default one");
             writer.write_default()?;
             Ok(writer)
         } else {
@@ -121,12 +122,14 @@ impl ConfigWriter {
             let next_addr = CONFIG_ADD + (self.last_valid_index + 1) * CONFIG_SIZE;
             let value = unsafe { ptr::read_volatile(next_addr as *const u8) };
             if value != 0xFF {
+                log!("Found no erased flash while attempting write");
                 return Err(FlashError::FlashNotErased);
             }
             self.write(next_addr, &config[..])?;
             self.last_valid_index += 1;
         } else {
             // No more space in the page, erase and go back to the start
+            log!("Got to the end of page, going back to start");
             self.erase_page()?;
             self.write(CONFIG_ADD, &config[..])?;
             self.last_valid_index = 0;
@@ -189,9 +192,11 @@ impl ConfigWriter {
             self.flash().keyr.write(|w| w.key().bits(KEY2));
         }
 
-        match self.flash().cr.read().lock().bit_is_clear() {
-            true => Ok(()),
-            false => Err(FlashError::UnlockError),
+        if self.flash().cr.read().lock().bit_is_clear() {
+            Ok(())
+        } else {
+            log!("Flash unlocking error");
+            Err(FlashError::UnlockError)
         }
     }
 

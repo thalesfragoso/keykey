@@ -23,6 +23,7 @@ fn main() -> Result<()> {
                     '1' => term.state = State::Set1,
                     '2' => term.state = State::Set2,
                     '3' => term.state = State::Set3,
+                    's' => app.save_config(&mut term)?,
                     _ => {}
                 },
                 _ => {}

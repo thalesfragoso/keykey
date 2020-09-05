@@ -57,15 +57,17 @@ impl From<u8> for ReportType {
 #[repr(u8)]
 pub enum VendorCommand {
     Set1 = 1,
-    Set2 = 2,
-    Set3 = 3,
+    Set2,
+    Set3,
+    Save,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum AppCommand {
     Set1(KeyCode),
     Set2(KeyCode),
     Set3(KeyCode),
+    Save,
 }
 
 impl AppCommand {
@@ -74,6 +76,7 @@ impl AppCommand {
             VendorCommand::Set1 => AppCommand::Set1(value),
             VendorCommand::Set2 => AppCommand::Set2(value),
             VendorCommand::Set3 => AppCommand::Set3(value),
+            VendorCommand::Save => AppCommand::Save,
         }
     }
 }

@@ -1,4 +1,7 @@
-use super::{BtnsType, NUM_BTS};
+use super::{
+    flash::{ConfigWriter, FlashError},
+    BtnsType, NUM_BTS,
+};
 use core::convert::TryFrom;
 use debouncer::typenum::consts::*;
 use debouncer::{BtnState, PortDebouncer};
@@ -223,12 +226,18 @@ impl Matrix {
         }
     }
 
-    pub fn update_layout(&mut self, command: AppCommand) {
+    pub fn update_layout(
+        &mut self,
+        command: AppCommand,
+        writer: &mut ConfigWriter,
+    ) -> Result<(), FlashError> {
         match command {
             AppCommand::Set1(value) => self.layout[0] = value,
             AppCommand::Set2(value) => self.layout[1] = value,
             AppCommand::Set3(value) => self.layout[2] = value,
-        }
+            AppCommand::Save => writer.write_config(*self)?,
+        };
+        Ok(())
     }
 
     pub fn update(&self, debouncer: &mut PortDebouncer<U8, BtnsType>) -> KbHidReport {

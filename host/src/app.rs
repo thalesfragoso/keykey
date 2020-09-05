@@ -148,6 +148,22 @@ impl App {
             .with_context(|| "Failed to send control transfer.")
     }
 
+    pub fn save_config(&mut self, w: &mut impl Write) -> Result<()> {
+        let command = VendorCommand::Save;
+        let timeout = Duration::from_secs(1);
+        self.usb_handle
+            .write_control(self.request_type, command as u8, 0, 0, &[], timeout)
+            .map(|_| ())
+            .with_context(|| "Failed to send control transfer.")?;
+
+        execute!(
+            w,
+            cursor::MoveToNextLine(1),
+            style::Print("Configuration saved"),
+        )
+        .with_context(|| "Failed to print.")
+    }
+
     fn search_all(&mut self) {
         self.hits.clear();
         let input = self.user_input.as_str();

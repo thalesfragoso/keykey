@@ -10,7 +10,7 @@ edition = "2018"
 stm32f1xx-hal = {version = "0.6.1", features = ["stm32f103", "rt", "stm32-usbd"] }
 cortex-m-rtic = "0.5.3"
 cortex-m = "0.6.3"
-rtt-target = { version = "0.2.2", features = ["cortex-m"] }
+rtt-target = { version = "0.2.2", features = ["cortex-m"], optional = true }
 debouncer = {git = "https://github.com/thalesfragoso/debouncer", rev = "33f5651"}
 keykey-host = { path = "../host" }
 usb-device = "0.2.5"
@@ -23,3 +23,6 @@ static_assertions = "1.1.0"
 name = "keykey"
 test = false
 bench = false
+
+[features]
+log = ["rtt-target"]
