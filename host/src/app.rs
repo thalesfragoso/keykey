@@ -18,7 +18,7 @@ use std::{
 };
 use strum::IntoEnumIterator;
 
-const KEY_INPUT_LABEL: &'static str = "Key: ";
+const KEY_INPUT_LABEL: &'static str = "Search: ";
 const SELECT_MENU: &str = r#"Keykey configuration tool
 
 Controls:

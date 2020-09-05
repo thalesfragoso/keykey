@@ -122,6 +122,8 @@ const APP: () = {
     #[idle]
     fn idle(_cx: idle::Context) -> ! {
         loop {
+            // This should change to `wfi` eventually, just leaving like this to ease development,
+            // since it can be a bit harder to attach to the chip during wfi
             asm::nop();
         }
     }

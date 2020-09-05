@@ -1,0 +1,67 @@
+[config]
+default_to_workspace = false
+
+[tasks.firmware]
+script = [
+    "cd keykey",
+    "cargo build --release"
+]
+
+[tasks.firmware-log]
+script = [
+    "cd keykey",
+    "cargo build --release --features=log"
+]
+
+[tasks.host]
+script = [
+    "cd host",
+    "cargo build --release --features=host",
+]
+
+[tasks.cli]
+script = [
+    "cd host",
+    "cargo run --release --features=host",
+]
+dependencies = ["host"]
+
+[tasks.all]
+dependencies = [
+    "firmware",
+    "host",
+]
+
+[tasks.size]
+script = [
+    "cd keykey",
+    "cargo size --release",
+]
+dependencies = ["firmware"]
+
+[tasks.sizea]
+script = [
+    "cd keykey",
+    "cargo size --release -- -A",
+]
+dependencies = ["firmware"]
+
+[tasks.gdb]
+script = [
+    "cd kekey",
+    "cargo run --release"
+]
+dependencies = ["firmware"]
+
+[tasks.flash]
+script = [
+    "cd keykey",
+    "cargo flash --release --chip stm32f103c8",
+]
+dependencies = ["firmware"]
+
+#[tasks.flash]
+#script = [
+#    "openocd -f interface/stlink-v2.cfg -f target/stm32f1x.cfg -c \"program target/thumbv7m-none-eabi/release/keykey verify reset exit\""
+#]
+#dependencies = ["firmware"]
