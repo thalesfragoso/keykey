@@ -90,8 +90,10 @@ impl ConfigWriter {
     /// Writes a default configuration to the start of the config page.
     pub fn write_default(&mut self) -> Result<(), FlashError> {
         self.erase_page()?;
-        let default_matrix = Matrix::new().to_bytes();
-        self.write(CONFIG_ADD, &default_matrix[..])?;
+        let mut config = [0u8; CONFIG_SIZE];
+        Self::matrix_to_config(Matrix::new(), &mut config);
+
+        self.write(CONFIG_ADD, &config[..])?;
         self.last_valid_index = 0;
         Ok(())
     }
@@ -113,10 +115,8 @@ impl ConfigWriter {
     /// method will erase the whole page and write to the first place. It will fail if the next
     /// place to write is not already erased.
     pub fn write_config(&mut self, matrix: Matrix) -> Result<(), FlashError> {
-        let bytes = matrix.to_bytes();
         let mut config = [0u8; CONFIG_SIZE];
-        config[0] = MAGIC;
-        config[1..NUM_BTS].copy_from_slice(&bytes[..]);
+        Self::matrix_to_config(matrix, &mut config);
 
         if self.last_valid_index + 1 < CONFIGS_IN_PAGE {
             let next_addr = CONFIG_ADD + (self.last_valid_index + 1) * CONFIG_SIZE;
@@ -135,6 +135,12 @@ impl ConfigWriter {
             self.last_valid_index = 0;
         }
         Ok(())
+    }
+
+    fn matrix_to_config(matrix: Matrix, config: &mut [u8; CONFIG_SIZE]) {
+        let bytes = matrix.to_bytes();
+        config[0] = MAGIC;
+        config[1..=NUM_BTS].copy_from_slice(&bytes[..]);
     }
 
     fn erase_page(&mut self) -> Result<(), FlashError> {
@@ -168,6 +174,7 @@ impl ConfigWriter {
                 // NOTE(unsafe) This is a valid address to read from
                 let verify = unsafe { ptr::read_volatile(address as *const u16) };
                 if verify != 0xFFFF {
+                    log!("Verification error during erasing");
                     return Err(FlashError::VerificationError);
                 }
             }
@@ -217,7 +224,7 @@ impl ConfigWriter {
     }
 
     fn write(&mut self, start: usize, data: &[u8]) -> Result<(), FlashError> {
-        if Self::valid_range(start, data.len()) || data.len() & 1 != 0 {
+        if !Self::valid_range(start, data.len()) || data.len() & 1 != 0 {
             return Err(FlashError::WrongRange);
         }
         self.unlock()?;
@@ -252,10 +259,10 @@ impl ConfigWriter {
             let verify = unsafe { core::ptr::read_volatile(addr as *mut u16) };
             if verify != hword {
                 self.lock();
+                log!("Verification error during programming");
                 return Err(FlashError::VerificationError);
             }
         }
-
         // Lock Flash and report success
         self.lock();
         Ok(())

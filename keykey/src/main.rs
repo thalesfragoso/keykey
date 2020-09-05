@@ -110,7 +110,7 @@ const APP: () = {
 
         init::LateResources {
             debouncer_timer: timer2,
-            debouncer_handler: PortDebouncer::new(32, 208),
+            debouncer_handler: PortDebouncer::new(16, 96),
             usb_dev,
             keyboard,
             app_consumer: cons,

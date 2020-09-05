@@ -7,10 +7,11 @@ use app::{App, State, Term};
 fn main() -> Result<()> {
     let mut term = Term::new()?;
     let mut app = App::new()?;
+    let mut config_saved = false;
 
     'outer: loop {
         if term.state == State::SelectScreen {
-            term.render_menu_screen()?;
+            term.render_menu_screen(config_saved)?;
             match read()? {
                 Event::Key(KeyEvent {
                     code: TermKey::Char('q'),
@@ -23,13 +24,19 @@ fn main() -> Result<()> {
                     '1' => term.state = State::Set1,
                     '2' => term.state = State::Set2,
                     '3' => term.state = State::Set3,
-                    's' => app.save_config(&mut term)?,
+                    's' => {
+                        if !config_saved {
+                            app.save_config()?;
+                            config_saved = true;
+                        }
+                    }
                     _ => {}
                 },
                 _ => {}
             }
         } else {
             'inner: loop {
+                config_saved = false;
                 app.render(&mut term)?;
                 match read()? {
                     Event::Key(KeyEvent {

@@ -30,7 +30,7 @@ Options:
 1. Config button 1
 2. Config button 2
 3. Config button 3
-s. Save current configuration to device flash - unimplemented
+s. Save current configuration to device flash
 "#;
 
 pub struct App {
@@ -148,20 +148,13 @@ impl App {
             .with_context(|| "Failed to send control transfer.")
     }
 
-    pub fn save_config(&mut self, w: &mut impl Write) -> Result<()> {
+    pub fn save_config(&mut self) -> Result<()> {
         let command = VendorCommand::Save;
         let timeout = Duration::from_secs(1);
         self.usb_handle
             .write_control(self.request_type, command as u8, 0, 0, &[], timeout)
             .map(|_| ())
-            .with_context(|| "Failed to send control transfer.")?;
-
-        execute!(
-            w,
-            cursor::MoveToNextLine(1),
-            style::Print("Configuration saved"),
-        )
-        .with_context(|| "Failed to print.")
+            .with_context(|| "Failed to send control transfer.")
     }
 
     fn search_all(&mut self) {
@@ -210,7 +203,7 @@ impl Term {
         enable_raw_mode()?;
         Ok(term)
     }
-    pub fn render_menu_screen(&mut self) -> Result<()> {
+    pub fn render_menu_screen(&mut self, config_saved: bool) -> Result<()> {
         queue!(
             self,
             style::ResetColor,
@@ -221,6 +214,13 @@ impl Term {
 
         for line in SELECT_MENU.split('\n') {
             queue!(self, style::Print(line), cursor::MoveToNextLine(1))?;
+        }
+        if config_saved {
+            queue!(
+                self,
+                cursor::MoveToNextLine(1),
+                style::Print("Configuration saved"),
+            )?;
         }
         self.flush()?;
         Ok(())
