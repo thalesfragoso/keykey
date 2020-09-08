@@ -1,4 +1,8 @@
-use super::{
+use crate::{
+    descriptors::{
+        OSFeatureDescriptorType, IF0_MS_PROPERTIES_OS_DESCRIPTOR, MS_COMPATIBLE_ID_DESCRIPTOR,
+        REPORT_DESCRIPTOR, STRING_MOS,
+    },
     flash::{ConfigWriter, FlashError},
     BtnsType, NUM_BTS,
 };
@@ -22,33 +26,6 @@ use usb_device::{
     UsbError,
 };
 
-#[rustfmt::skip]
-const REPORT_DESCRIPTOR: &[u8] = &[
-    0x05, 0x01,         // Usage Page (Generic Desktop Ctrls)
-    0x09, 0x06,         // Usage (Keyboard)
-    0xA1, 0x01,         // Collection (Application)
-    0x05, 0x07,         //   Usage Page (Kbrd/Keypad)
-    0x19, 0xE0,         //   Usage Minimum (0xE0)
-    0x29, 0xE7,         //   Usage Maximum (0xE7)
-    0x15, 0x00,         //   Logical Minimum (0)
-    0x25, 0x01,         //   Logical Maximum (1)
-    0x75, 0x01,         //   Report Size (1)
-    0x95, 0x08,         //   Report Count (8)
-    0x81, 0x02,         //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x95, 0x01,         //   Report Count (1)
-    0x75, 0x08,         //   Report Size (8)
-    0x81, 0x03,         //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x95, 0x06,         //   Report Count (6)
-    0x75, 0x08,         //   Report Size (8)
-    0x15, 0x00,         //   Logical Minimum (0)
-    0x26, 0xFB, 0x00,   //   Logical Maximum (0xFB)
-    0x05, 0x07,         //   Usage Page (Kbrd/Keypad)
-    0x19, 0x00,         //   Usage Minimum (0x00)
-    0x29, 0xFB,         //   Usage Maximum (0xFB)
-    0x81, 0x00,         //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0xC0,               // End Collection
-];
-
 const SPECIFICATION_RELEASE: u16 = 0x111;
 const INTERFACE_CLASS_HID: u8 = 0x03;
 const SUBCLASS_NONE: u8 = 0x00;
@@ -64,13 +41,17 @@ pub struct Keykey<'a, 'b, B: UsbBus> {
 
 impl<'a, 'b, B: UsbBus> Keykey<'a, 'b, B> {
     pub fn new(alloc: &'a UsbBusAllocator<B>, prod: Producer<'b, AppCommand, U8>) -> Self {
-        Self {
+        let keyboard = Self {
             interface: alloc.interface(),
             endpoint_interrupt_in: alloc.interrupt(8, 10),
             expect_interrupt_in_complete: false,
             report: KbHidReport::default(),
             cmd_prod: prod,
-        }
+        };
+        // We use the interface 0 as WinUSB compatible, we could change the descriptor at runtime,
+        // but it seems wasteful, since this is gonna be true because that is our only interface
+        assert!(u8::from(keyboard.interface) == 0);
+        keyboard
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize, ()> {
@@ -154,8 +135,12 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
         Ok(())
     }
 
-    fn get_string(&self, _index: StringIndex, _lang_id: u16) -> Option<&str> {
-        None
+    fn get_string(&self, index: StringIndex, _lang_id: u16) -> Option<&str> {
+        if u8::from(index) == 0xEE {
+            Some(STRING_MOS)
+        } else {
+            None
+        }
     }
 
     fn endpoint_in_complete(&mut self, addr: EndpointAddress) {
@@ -187,29 +172,54 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
                     }
                 }
             }
+            (RequestType::Vendor, Recipient::Device)
+            | (RequestType::Vendor, Recipient::Interface) => {
+                log!(
+                    "Vendor request: {:?}, Recipient: {:?}, Index: {:?}",
+                    req.request,
+                    req.recipient,
+                    req.index
+                );
+                if let Ok(VendorCommand::GetOSFeature) = VendorCommand::try_from(req.request) {
+                    match OSFeatureDescriptorType::try_from(req.index) {
+                        Ok(OSFeatureDescriptorType::CompatibleID) => {
+                            log!("Sending Compatible ID Descriptor");
+                            let desc = &MS_COMPATIBLE_ID_DESCRIPTOR;
+                            let max_len = req.length.min(desc.len() as u16) as usize;
+                            let data = desc.to_bytes();
+                            xfer.accept_with_static(&data[..max_len]).ok();
+                        }
+                        Ok(OSFeatureDescriptorType::Properties) => {
+                            if req.value == u8::from(self.interface) as u16 {
+                                log!("Sending Properties OS Descriptor");
+                                let desc = &IF0_MS_PROPERTIES_OS_DESCRIPTOR;
+                                let max_len = req.length.min(desc.len() as u16) as usize;
+                                let mut data = [0u8; 192];
+                                desc.write_to_buf(&mut data[..]);
+                                xfer.accept_with(&data[..max_len]).ok();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
             _ => {}
         }
     }
 
     fn control_out(&mut self, xfer: ControlOut<B>) {
         let req = xfer.request();
-        #[allow(clippy::single_match)]
-        match (req.request_type, req.recipient) {
-            (RequestType::Vendor, Recipient::Device) => {
-                if let (Ok(cmd), Ok(key)) = (
-                    VendorCommand::try_from(req.request),
-                    KeyCode::try_from(req.value as u8),
-                ) {
-                    if self
-                        .cmd_prod
-                        .enqueue(AppCommand::from_req_value(cmd, key))
-                        .is_ok()
-                    {
+        if req.request_type == RequestType::Vendor && req.recipient == Recipient::Device {
+            if let (Ok(cmd), Ok(key)) = (
+                VendorCommand::try_from(req.request),
+                KeyCode::try_from(req.value as u8),
+            ) {
+                if let Some(app_command) = AppCommand::from_req_value(cmd, key) {
+                    if self.cmd_prod.enqueue(app_command).is_ok() {
                         xfer.accept().ok();
                     }
                 }
             }
-            _ => {}
         }
     }
 }

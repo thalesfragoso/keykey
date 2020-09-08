@@ -24,6 +24,7 @@ use usb_device::{bus, class::UsbClass, prelude::*};
 
 #[macro_use]
 mod loggy;
+mod descriptors;
 mod flash;
 mod keyboard;
 use flash::{ConfigWriter, FlashError};

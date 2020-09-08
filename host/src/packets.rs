@@ -60,6 +60,8 @@ pub enum VendorCommand {
     Set2,
     Set3,
     Save,
+    // WinUSB request
+    GetOSFeature = b'F',
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -71,12 +73,13 @@ pub enum AppCommand {
 }
 
 impl AppCommand {
-    pub fn from_req_value(req: VendorCommand, value: KeyCode) -> Self {
+    pub fn from_req_value(req: VendorCommand, value: KeyCode) -> Option<Self> {
         match req {
-            VendorCommand::Set1 => AppCommand::Set1(value),
-            VendorCommand::Set2 => AppCommand::Set2(value),
-            VendorCommand::Set3 => AppCommand::Set3(value),
-            VendorCommand::Save => AppCommand::Save,
+            VendorCommand::Set1 => Some(AppCommand::Set1(value)),
+            VendorCommand::Set2 => Some(AppCommand::Set2(value)),
+            VendorCommand::Set3 => Some(AppCommand::Set3(value)),
+            VendorCommand::Save => Some(AppCommand::Save),
+            _ => None,
         }
     }
 }

@@ -322,6 +322,7 @@ dependencies = [
  "embedded-hal",
  "heapless",
  "keykey-host",
+ "num_enum",
  "rtt-target",
  "static_assertions",
  "stm32f1xx-hal",

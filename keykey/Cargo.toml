@@ -17,6 +17,7 @@ usb-device = "0.2.5"
 embedded-hal = "0.2.3"
 heapless = "0.5.5"
 static_assertions = "1.1.0"
+num_enum = { version = "0.5.1", default-features = false }
 #keyberon = { git = "https://github.com/TeXitoi/keyberon", rev = "1d5ddd0" }
 
 [[bin]]

@@ -16,7 +16,7 @@
 // Remove this later
 #![allow(dead_code)]
 
-use super::{Matrix, NUM_BTS};
+use crate::{Matrix, NUM_BTS};
 use core::{ptr, slice};
 use static_assertions::const_assert;
 use stm32f1xx_hal::{
