@@ -40,7 +40,7 @@ pub const MS_COMPATIBLE_ID_DESCRIPTOR: MSCompatibleIDDescriptor = MSCompatibleID
     bNumSections: 1,
     _rsvd0: [0; 7],
     features: [MSCompatibleIDDescriptorFunction {
-        bInterfaceNumber: 0,
+        bInterfaceNumber: 1,
         _rsvd0: 0,
         sCompatibleID: MS_COMPATIBLE_ID_WINUSB,
         sSubCompatibleID: [0u8; 8],
@@ -48,14 +48,14 @@ pub const MS_COMPATIBLE_ID_DESCRIPTOR: MSCompatibleIDDescriptor = MSCompatibleID
     }],
 };
 
-pub const IF0_MS_PROPERTIES_OS_DESCRIPTOR: MSPropertiesOSDescriptor = MSPropertiesOSDescriptor {
+pub const IF1_MS_PROPERTIES_OS_DESCRIPTOR: MSPropertiesOSDescriptor = MSPropertiesOSDescriptor {
     bcdVersion: 0x0100,
     wIndex: OSFeatureDescriptorType::Properties as u16,
     wCount: 1,
     features: [MSPropertiesOSDescriptorFeature {
         dwPropertyDataType: MSPropertyDataType::REG_SZ as u32,
         bPropertyName: "DeviceInterfaceGUID\x00",
-        bPropertyData: "{183BE48C-1C39-4612-92EB-650C4450C1D3}\x00",
+        bPropertyData: "{3EC4A6C4-14DC-4FFC-BB1A-13C10D7C035B}\x00",
     }],
 };
 
@@ -124,9 +124,7 @@ impl MSCompatibleIDDescriptor {
     pub fn to_bytes(&self) -> &[u8] {
         // NOTE(unsafe) We return a non-mutable slice into this packed struct's memory at the length
         // of the struct, with a lifetime bound to &self
-        unsafe {
-            core::slice::from_raw_parts(self as *const _ as *const u8, core::mem::size_of::<Self>())
-        }
+        unsafe { core::slice::from_raw_parts(self as *const _ as *const u8, size_of::<Self>()) }
     }
     pub fn len(&self) -> usize {
         self.dwLength as usize

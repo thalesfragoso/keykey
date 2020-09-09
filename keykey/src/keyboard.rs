@@ -1,12 +1,15 @@
 use crate::{
     descriptors::{
-        OSFeatureDescriptorType, IF0_MS_PROPERTIES_OS_DESCRIPTOR, MS_COMPATIBLE_ID_DESCRIPTOR,
+        OSFeatureDescriptorType, IF1_MS_PROPERTIES_OS_DESCRIPTOR, MS_COMPATIBLE_ID_DESCRIPTOR,
         REPORT_DESCRIPTOR, STRING_MOS,
     },
     flash::{ConfigWriter, FlashError},
     BtnsType, NUM_BTS,
 };
-use core::convert::TryFrom;
+use core::{
+    convert::TryFrom,
+    sync::atomic::{compiler_fence, Ordering},
+};
 use debouncer::typenum::consts::*;
 use debouncer::{BtnState, PortDebouncer};
 use heapless::spsc::Producer;
@@ -28,11 +31,13 @@ use usb_device::{
 
 const SPECIFICATION_RELEASE: u16 = 0x111;
 const INTERFACE_CLASS_HID: u8 = 0x03;
+const INTERFACE_CLASS_VENDOR: u8 = 0xFF;
 const SUBCLASS_NONE: u8 = 0x00;
 const KEYBOARD_PROTOCOL: u8 = 0x01;
 
 pub struct Keykey<'a, 'b, B: UsbBus> {
     interface: InterfaceNumber,
+    winusb_iface: InterfaceNumber,
     endpoint_interrupt_in: EndpointIn<'a, B>,
     expect_interrupt_in_complete: bool,
     report: KbHidReport,
@@ -41,16 +46,23 @@ pub struct Keykey<'a, 'b, B: UsbBus> {
 
 impl<'a, 'b, B: UsbBus> Keykey<'a, 'b, B> {
     pub fn new(alloc: &'a UsbBusAllocator<B>, prod: Producer<'b, AppCommand, U8>) -> Self {
+        let hid_interface = alloc.interface();
+
+        // We want hid_interface to get interface 0
+        compiler_fence(Ordering::SeqCst);
+
         let keyboard = Self {
-            interface: alloc.interface(),
+            interface: hid_interface,
+            winusb_iface: alloc.interface(),
             endpoint_interrupt_in: alloc.interrupt(8, 10),
             expect_interrupt_in_complete: false,
             report: KbHidReport::default(),
             cmd_prod: prod,
         };
-        // We use the interface 0 as WinUSB compatible, we could change the descriptor at runtime,
-        // but it seems wasteful, since this is gonna be true because that is our only interface
-        assert!(u8::from(keyboard.interface) == 0);
+        // We use the interface 1 as WinUSB compatible, we could change the descriptor at runtime,
+        // but it seems wasteful, since this is gonna be true given how interface allocation works.
+        // Assert to prevent problems with future changes.
+        assert!(u8::from(keyboard.winusb_iface) == 1);
         keyboard
     }
 
@@ -132,6 +144,8 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
 
         writer.endpoint(&self.endpoint_interrupt_in)?;
 
+        writer.interface(self.winusb_iface, INTERFACE_CLASS_VENDOR, SUBCLASS_NONE, 0)?;
+
         Ok(())
     }
 
@@ -187,16 +201,21 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
                             let desc = &MS_COMPATIBLE_ID_DESCRIPTOR;
                             let max_len = req.length.min(desc.len() as u16) as usize;
                             let data = desc.to_bytes();
-                            xfer.accept_with_static(&data[..max_len]).ok();
+                            xfer.accept_with_static(&data[..max_len])
+                                .unwrap_or_else(|e| {
+                                    log!("Error while sending WCID: {:?}", e);
+                                });
                         }
                         Ok(OSFeatureDescriptorType::Properties) => {
-                            if req.value == u8::from(self.interface) as u16 {
+                            if req.value == u8::from(self.winusb_iface) as u16 {
                                 log!("Sending Properties OS Descriptor");
-                                let desc = &IF0_MS_PROPERTIES_OS_DESCRIPTOR;
+                                let desc = &IF1_MS_PROPERTIES_OS_DESCRIPTOR;
                                 let max_len = req.length.min(desc.len() as u16) as usize;
                                 let mut data = [0u8; 192];
                                 desc.write_to_buf(&mut data[..]);
-                                xfer.accept_with(&data[..max_len]).ok();
+                                xfer.accept_with(&data[..max_len]).unwrap_or_else(|e| {
+                                    log!("Error while sending OSD: {:?}", e);
+                                });
                             }
                         }
                         _ => {}

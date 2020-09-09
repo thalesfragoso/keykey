@@ -13,7 +13,7 @@ cortex-m = "0.6.3"
 rtt-target = { version = "0.2.2", features = ["cortex-m"], optional = true }
 debouncer = {git = "https://github.com/thalesfragoso/debouncer", rev = "33f5651"}
 keykey-host = { path = "../host" }
-usb-device = "0.2.5"
+usb-device = {version = "0.2.5", features = ["control-buffer-256"] }
 embedded-hal = "0.2.3"
 heapless = "0.5.5"
 static_assertions = "1.1.0"
