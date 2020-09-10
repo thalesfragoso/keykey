@@ -280,10 +280,14 @@ impl KeyCode {
     }
 }
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct KbHidReport([u8; 8]);
 
 impl KbHidReport {
+    pub const fn new() -> Self {
+        KbHidReport([0; 8])
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }

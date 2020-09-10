@@ -2,7 +2,10 @@ use super::{
     flash::{ConfigWriter, FlashError},
     BtnsType, NUM_BTS,
 };
-use core::convert::TryFrom;
+use core::{
+    convert::TryFrom,
+    sync::atomic::{compiler_fence, Ordering},
+};
 use debouncer::typenum::consts::*;
 use debouncer::{BtnState, PortDebouncer};
 use heapless::spsc::Producer;
@@ -12,6 +15,7 @@ use keylib::{
         KbHidReport, KeyCode,
     },
     packets::{AppCommand, DescriptorType, ReportType, Request, VendorCommand},
+    CTRL_INTERFACE,
 };
 use usb_device::{
     bus::{InterfaceNumber, StringIndex, UsbBus, UsbBusAllocator},
@@ -23,30 +27,46 @@ use usb_device::{
 };
 
 #[rustfmt::skip]
-const REPORT_DESCRIPTOR: &[u8] = &[
-    0x05, 0x01,         // Usage Page (Generic Desktop Ctrls)
-    0x09, 0x06,         // Usage (Keyboard)
-    0xA1, 0x01,         // Collection (Application)
-    0x05, 0x07,         //   Usage Page (Kbrd/Keypad)
-    0x19, 0xE0,         //   Usage Minimum (0xE0)
-    0x29, 0xE7,         //   Usage Maximum (0xE7)
-    0x15, 0x00,         //   Logical Minimum (0)
-    0x25, 0x01,         //   Logical Maximum (1)
-    0x75, 0x01,         //   Report Size (1)
-    0x95, 0x08,         //   Report Count (8)
-    0x81, 0x02,         //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x95, 0x01,         //   Report Count (1)
-    0x75, 0x08,         //   Report Size (8)
-    0x81, 0x03,         //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0x95, 0x06,         //   Report Count (6)
-    0x75, 0x08,         //   Report Size (8)
-    0x15, 0x00,         //   Logical Minimum (0)
-    0x26, 0xFB, 0x00,   //   Logical Maximum (0xFB)
-    0x05, 0x07,         //   Usage Page (Kbrd/Keypad)
-    0x19, 0x00,         //   Usage Minimum (0x00)
-    0x29, 0xFB,         //   Usage Maximum (0xFB)
-    0x81, 0x00,         //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    0xC0,               // End Collection
+const KEY_REPORT_DESCRIPTOR: &[u8] = &[
+    0x05, 0x01,             // Usage Page (Generic Desktop Ctrls)
+    0x09, 0x06,             // Usage (Keyboard)
+    0xA1, 0x01,             // Collection (Application)
+    0x05, 0x07,             //   Usage Page (Kbrd/Keypad)
+    0x19, 0xE0,             //   Usage Minimum (0xE0)
+    0x29, 0xE7,             //   Usage Maximum (0xE7)
+    0x15, 0x00,             //   Logical Minimum (0)
+    0x25, 0x01,             //   Logical Maximum (1)
+    0x75, 0x01,             //   Report Size (1)
+    0x95, 0x08,             //   Report Count (8)
+    0x81, 0x02,             //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x95, 0x01,             //   Report Count (1)
+    0x75, 0x08,             //   Report Size (8)
+    0x81, 0x03,             //   Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0x95, 0x06,             //   Report Count (6)
+    0x75, 0x08,             //   Report Size (8)
+    0x15, 0x00,             //   Logical Minimum (0)
+    0x26, 0xFB, 0x00,       //   Logical Maximum (0xFB)
+    0x05, 0x07,             //   Usage Page (Kbrd/Keypad)
+    0x19, 0x00,             //   Usage Minimum (0x00)
+    0x29, 0xFB,             //   Usage Maximum (0xFB)
+    0x81, 0x00,             //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    0xC0,                   // End Collection
+];
+
+// Windows doesn't let you access a keyboard interface, so create another interface for
+// configuration. A WinUSB interface would be better, but I hit libusb #619.
+#[rustfmt::skip]
+const CTRL_REPORT_DESCRIPTOR: &[u8] = &[
+    0x06, 0x00, 0xFF,       // Usage Page (Vendor Defined 0xFF00)
+    0x09, 0x01,             // Usage (Vendor 1)
+    0xA1, 0x01,             // Collection (Application)
+    0x09, 0x01,             //   Usage (Vendor 1)
+    0x15, 0x00,             //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,       //   Logical Maximum (255)
+    0x75, 0x08,             //   Report Size (8)
+    0x95, 0x02,             //   Report Count (2)
+    0xB1, 0x02,             //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
+    0xC0,                   // End Collection
 ];
 
 const SPECIFICATION_RELEASE: u16 = 0x111;
@@ -56,7 +76,9 @@ const KEYBOARD_PROTOCOL: u8 = 0x01;
 
 pub struct Keykey<'a, 'b, B: UsbBus> {
     interface: InterfaceNumber,
+    ctrl_interface: InterfaceNumber,
     endpoint_interrupt_in: EndpointIn<'a, B>,
+    dummy_endpoint: EndpointIn<'a, B>,
     expect_interrupt_in_complete: bool,
     report: KbHidReport,
     cmd_prod: Producer<'b, AppCommand, U8>,
@@ -64,13 +86,27 @@ pub struct Keykey<'a, 'b, B: UsbBus> {
 
 impl<'a, 'b, B: UsbBus> Keykey<'a, 'b, B> {
     pub fn new(alloc: &'a UsbBusAllocator<B>, prod: Producer<'b, AppCommand, U8>) -> Self {
-        Self {
-            interface: alloc.interface(),
+        let key_interface = alloc.interface();
+
+        // We want key interface to be 0 and ctrl interface to be 1, We use this because hidapi on
+        // linux can't retrieve usage_page/usage correctly, so we need to know the number of the
+        // control interface before hand.
+        compiler_fence(Ordering::SeqCst);
+
+        let keykey = Self {
+            interface: key_interface,
+            ctrl_interface: alloc.interface(),
             endpoint_interrupt_in: alloc.interrupt(8, 10),
+            dummy_endpoint: alloc.interrupt(8, 10),
             expect_interrupt_in_complete: false,
-            report: KbHidReport::default(),
+            report: KbHidReport::new(),
             cmd_prod: prod,
-        }
+        };
+
+        // This should always be true, given how `alloc.interface()` is implemented, this assert is
+        // here to be precautious about future changes.
+        assert_eq!(u8::from(keykey.ctrl_interface), CTRL_INTERFACE);
+        keykey
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize, ()> {
@@ -102,11 +138,23 @@ impl<'a, 'b, B: UsbBus> Keykey<'a, 'b, B> {
         let req = xfer.request();
         let [report_type, _report_id] = req.value.to_be_bytes();
         let report_type = ReportType::from(report_type);
-        let response = self.report.as_bytes();
+        let interface = req.index as u8;
+
+        let response = if interface == u8::from(self.interface) {
+            self.report.as_bytes()
+        } else if interface == u8::from(self.ctrl_interface) {
+            &[0; 8]
+        } else {
+            // This isn't for us
+            return;
+        };
+
+        if req.length < response.len() as u16 {
+            xfer.reject().ok();
+            return;
+        }
         match report_type {
-            ReportType::Input if req.length >= response.len() as u16 => {
-                xfer.accept_with(response).ok()
-            }
+            ReportType::Input | ReportType::Feature => xfer.accept_with(response).ok(),
             _ => xfer.reject().ok(),
         };
     }
@@ -130,7 +178,7 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
             KEYBOARD_PROTOCOL,
         )?;
 
-        let descriptor_len = REPORT_DESCRIPTOR.len();
+        let descriptor_len = KEY_REPORT_DESCRIPTOR.len();
         if descriptor_len > u16::max_value() as usize {
             return Err(UsbError::InvalidState);
         }
@@ -151,6 +199,29 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
 
         writer.endpoint(&self.endpoint_interrupt_in)?;
 
+        // CTRL interface
+        writer.interface(self.ctrl_interface, INTERFACE_CLASS_HID, SUBCLASS_NONE, 0)?;
+
+        let descriptor_len = CTRL_REPORT_DESCRIPTOR.len();
+        if descriptor_len > u16::max_value() as usize {
+            return Err(UsbError::InvalidState);
+        }
+        let descriptor_len = (descriptor_len as u16).to_le_bytes();
+        let specification_release = SPECIFICATION_RELEASE.to_le_bytes();
+        writer.write(
+            DescriptorType::Hid as u8,
+            &[
+                specification_release[0],     // bcdHID.lower
+                specification_release[1],     // bcdHID.upper
+                0,                            // bCountryCode: 0 = not supported
+                1,                            // bNumDescriptors
+                DescriptorType::Report as u8, // bDescriptorType
+                descriptor_len[0],            // bDescriptorLength.lower
+                descriptor_len[1],            // bDescriptorLength.upper
+            ],
+        )?;
+
+        writer.endpoint(&self.dummy_endpoint)?;
         Ok(())
     }
 
@@ -171,20 +242,24 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
         match (req.request_type, req.recipient) {
             (RequestType::Standard, Recipient::Interface) => {
                 if req.request == control::Request::GET_DESCRIPTOR {
-                    let (dtype, index) = req.descriptor_type_index();
-                    if dtype == DescriptorType::Report as u8 && index == 0 {
-                        let report_len = REPORT_DESCRIPTOR.len();
-                        if report_len as u16 <= req.length {
-                            xfer.accept_with(REPORT_DESCRIPTOR).ok();
-                        }
+                    let (desc_type, iface) = req.descriptor_type_index();
+                    if desc_type == DescriptorType::Report as u8 {
+                        let report = if iface == u8::from(self.interface) {
+                            KEY_REPORT_DESCRIPTOR
+                        } else if iface == u8::from(self.ctrl_interface) {
+                            CTRL_REPORT_DESCRIPTOR
+                        } else {
+                            // This isn't for us
+                            return;
+                        };
+                        let n = report.len().min(req.length as usize);
+                        xfer.accept_with_static(&report[..n]).ok();
                     }
                 }
             }
             (RequestType::Class, Recipient::Interface) => {
-                if let Some(request) = Request::new(req.request) {
-                    if request == Request::GetReport {
-                        self.get_report(xfer);
-                    }
+                if let Some(Request::GetReport) = Request::new(req.request) {
+                    self.get_report(xfer);
                 }
             }
             _ => {}
@@ -193,23 +268,33 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
 
     fn control_out(&mut self, xfer: ControlOut<B>) {
         let req = xfer.request();
-        #[allow(clippy::single_match)]
-        match (req.request_type, req.recipient) {
-            (RequestType::Vendor, Recipient::Device) => {
-                if let (Ok(cmd), Ok(key)) = (
-                    VendorCommand::try_from(req.request),
-                    KeyCode::try_from(req.value as u8),
-                ) {
-                    if self
-                        .cmd_prod
-                        .enqueue(AppCommand::from_req_value(cmd, key))
-                        .is_ok()
+        // Check if this is for us
+        if req.request_type == RequestType::Class
+            && req.recipient == Recipient::Interface
+            && req.index == u8::from(self.ctrl_interface) as u16
+        {
+            if let Some(Request::SetReport) = Request::new(req.request) {
+                let data = xfer.data();
+                if data.len() == 2 {
+                    if let (Ok(cmd), Ok(key)) =
+                        (VendorCommand::try_from(data[0]), KeyCode::try_from(data[1]))
                     {
-                        xfer.accept().ok();
+                        if self
+                            .cmd_prod
+                            .enqueue(AppCommand::from_req_value(cmd, key))
+                            .is_ok()
+                        {
+                            xfer.accept().ok();
+                            return;
+                        }
                     }
                 }
             }
-            _ => {}
+            log!(
+                "Couldn't process request, req: {:?}, data: {:?}",
+                req,
+                xfer.data()
+            );
         }
     }
 }
@@ -241,12 +326,12 @@ impl Matrix {
     }
 
     pub fn update(&self, debouncer: &mut PortDebouncer<U8, BtnsType>) -> KbHidReport {
-        let mut report = KbHidReport::default();
+        let mut report = KbHidReport::new();
 
         for (index, &btn) in self.layout.iter().enumerate() {
             let state = debouncer.get_state(index);
             if let Ok(value) = state {
-                if value == BtnState::ChangedToPressed || value == BtnState::Repeat {
+                if value != BtnState::UnPressed {
                     report.pressed(btn);
                 }
             }
