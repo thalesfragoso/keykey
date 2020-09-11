@@ -4,17 +4,13 @@ use crossterm::{
     style::{self, Colorize},
     terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
 };
+use hidapi::{HidApi, HidDevice};
 use keylib::packets::VendorCommand;
-use keylib::{key_code::KeyCode, PID, VID};
-use rusb::{
-    request_type, Context as RusbContext, DeviceHandle, Direction, Recipient, RequestType,
-    UsbContext,
-};
+use keylib::{key_code::KeyCode, CTRL_INTERFACE, PID, VID};
 use std::{
     convert::AsRef,
     fmt,
     io::{self, stdout, Stdout, Write},
-    time::Duration,
 };
 use strum::IntoEnumIterator;
 
@@ -37,24 +33,33 @@ pub struct App {
     current_line: usize,
     user_input: String,
     hits: Vec<KeyCode>,
-    usb_handle: DeviceHandle<RusbContext>,
-    request_type: u8,
+    usb_handle: HidDevice,
 }
 
 impl App {
     pub fn new() -> Result<Self> {
-        let context = RusbContext::new().with_context(|| "Failed to create libusb context")?;
-        let usb_handle = context
-            .open_device_with_vid_pid(VID, PID)
-            .ok_or_else(|| anyhow!("Unable to open device, VID: {:#X}, PID: {:#X}", VID, PID))?;
+        let context = HidApi::new().context("Failed to create hidapi context")?;
+        let mut usb_handle = None;
 
-        let request_type = request_type(Direction::Out, RequestType::Vendor, Recipient::Device);
+        for device in context.device_list() {
+            if device.vendor_id() == VID
+                && device.product_id() == PID
+                && device.interface_number() == CTRL_INTERFACE as i32
+            {
+                usb_handle = Some(
+                    device
+                        .open_device(&context)
+                        .context("Failed to open device")?,
+                );
+                break;
+            }
+        }
+
         let mut app = Self {
             current_line: 0,
             user_input: String::with_capacity(16),
             hits: Vec::with_capacity(16),
-            usb_handle,
-            request_type,
+            usb_handle: usb_handle.ok_or_else(|| anyhow!("Couldn't find suitable device."))?,
         };
         app.search_all();
         Ok(app)
@@ -134,27 +139,22 @@ impl App {
             .get(self.current_line)
             .ok_or_else(|| anyhow!("Internal Error: Could not find selected key"))?;
 
-        let timeout = Duration::from_secs(1);
+        // First byte is the report ID
+        let data = [0, command as u8, *key as u8];
         self.usb_handle
-            .write_control(
-                self.request_type,
-                command as u8,
-                *key as u8 as u16,
-                0,
-                &[],
-                timeout,
-            )
+            .send_feature_report(&data[..])
             .map(|_| ())
-            .with_context(|| "Failed to send control transfer.")
+            .context("Failed to send feature report.")
     }
 
     pub fn save_config(&mut self) -> Result<()> {
-        let command = VendorCommand::Save;
-        let timeout = Duration::from_secs(1);
+        // First byte is the report ID
+        let data = [0, VendorCommand::Save as u8, 0];
+
         self.usb_handle
-            .write_control(self.request_type, command as u8, 0, 0, &[], timeout)
+            .send_feature_report(&data[..])
             .map(|_| ())
-            .with_context(|| "Failed to send control transfer.")
+            .context("Failed to send control transfer.")
     }
 
     fn search_all(&mut self) {

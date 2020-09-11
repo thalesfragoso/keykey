@@ -9,7 +9,7 @@ num_enum = { version = "0.5.1", default-features = false }
 crossterm = { version = "0.17.7", optional = true }
 strum_macros = {version = "0.19.2", optional = true }
 strum = { version = "0.19.2", optional = true }
-rusb = { version = "0.6.3", optional = true }
+hidapi = { version = "1.2.3", optional = true }
 anyhow = {version = "1.0.32", optional = true }
 
 [lib]
@@ -21,4 +21,4 @@ name = "keyconfig"
 path = "src/main.rs"
 
 [features]
-host = ["crossterm", "strum_macros", "strum", "rusb", "anyhow"]
+host = ["crossterm", "strum_macros", "strum", "hidapi", "anyhow"]
