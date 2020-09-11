@@ -97,7 +97,7 @@ impl<'a, 'b, B: UsbBus> Keykey<'a, 'b, B> {
             interface: key_interface,
             ctrl_interface: alloc.interface(),
             endpoint_interrupt_in: alloc.interrupt(8, 10),
-            dummy_endpoint: alloc.interrupt(8, 10),
+            dummy_endpoint: alloc.interrupt(16, 10),
             expect_interrupt_in_complete: false,
             report: KbHidReport::new(),
             cmd_prod: prod,
@@ -143,7 +143,7 @@ impl<'a, 'b, B: UsbBus> Keykey<'a, 'b, B> {
         let response = if interface == u8::from(self.interface) {
             self.report.as_bytes()
         } else if interface == u8::from(self.ctrl_interface) {
-            &[0; 8]
+            &[0; 16]
         } else {
             // This isn't for us
             return;
@@ -242,17 +242,20 @@ impl<B: UsbBus> UsbClass<B> for Keykey<'_, '_, B> {
         match (req.request_type, req.recipient) {
             (RequestType::Standard, Recipient::Interface) => {
                 if req.request == control::Request::GET_DESCRIPTOR {
-                    let (desc_type, iface) = req.descriptor_type_index();
-                    if desc_type == DescriptorType::Report as u8 {
-                        let report = if iface == u8::from(self.interface) {
+                    let (desc_type, desc_index) = req.descriptor_type_index();
+
+                    // We only have one report for each interface
+                    if desc_type == DescriptorType::Report as u8 && desc_index == 0 {
+                        let report = if req.index == u8::from(self.interface) as u16 {
                             KEY_REPORT_DESCRIPTOR
-                        } else if iface == u8::from(self.ctrl_interface) {
+                        } else if req.index == u8::from(self.ctrl_interface) as u16 {
                             CTRL_REPORT_DESCRIPTOR
                         } else {
                             // This isn't for us
                             return;
                         };
                         let n = report.len().min(req.length as usize);
+                        log!("Sending HID report, iface: {:?}, len: {:?}", req.index, n);
                         xfer.accept_with_static(&report[..n]).ok();
                     }
                 }
