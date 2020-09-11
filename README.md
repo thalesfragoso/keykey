@@ -55,9 +55,9 @@ PA0 to PA2 -> Active-low inputs with internal pull-ups and software debouncing.
 
 The CLI is self explanatory, you can type to search for the key you want in the key selection screen. Vertical scrolling is not implemented yet, you can use the search to reduce the amount of selectable keys on the screen.
 
-You will need to properly configure your `udev` rules to be able to send control transfers to the device. This device was not tested on Windows, you will probably need the `zadig` tool to use it, I'm planning on adding `WinUSB` descriptors but this is not implemented yet.
+You will need to properly configure your `udev` rules to be able to send features reports to the device.
 
-VID: 0x1209 PID: 0x0010 (Unofficial, for testing only)
+VID: 0x1209 PID: 0x000D (Unofficial, for testing only)
 
 You can run the utility with:
 
